@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Extraction Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>Document Extraction Portal</h1>
+            <div class="header-actions">
+                <input type="file" id="fileUpload" accept=".pdf" hidden>
+                <button id="uploadBtn" class="btn primary">Upload PDF</button>
+                <button id="manageRulesBtn" class="btn secondary">Manage Rules</button>
+                <a href="/scripts" class="btn secondary">Manage Scripts</a>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="split-pane" id="pdfPane">
+                <div class="pane-header">PDF Viewer</div>
+                <iframe id="pdfViewer" src="" frameborder="0"></iframe>
+                <div id="pdfPlaceholder">
+                    <p>Upload a PDF to view it here</p>
+                </div>
+            </div>
+
+            <div class="split-pane" id="extractionPane">
+                <div class="pane-header">
+                    <span>Extraction Results</span>
+                    <button id="extractBtn" class="btn primary" disabled>Extract Data</button>
+                </div>
+                <div id="resultsContainer">
+                    <div class="empty-state">
+                        <p>No data extracted yet. Upload a PDF and click Extract.</p>
+                    </div>
+                    <div id="extractedData" class="data-grid" style="display: none;"></div>
+                </div>
+
+                <div class="pane-header" style="margin-top: 20px;">
+                    <span>Raw Text (Debug)</span>
+                </div>
+                <div id="rawTextContainer">
+                    <pre id="rawTextContent"></pre>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Rules Modal -->
+    <div id="rulesModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Manage Extraction Rules</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="rules-actions">
+                    <button id="addRuleBtn" class="btn small">Add New Rule</button>
+                </div>
+                <table id="rulesTable">
+                    <thead>
+                        <tr>
+                            <th>Field Name</th>
+                            <th>Regex Pattern</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Rules will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+
+</html>

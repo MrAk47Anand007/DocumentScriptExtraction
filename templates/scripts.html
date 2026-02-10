@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Script Manager - Document Extraction Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap"
+        rel="stylesheet">
+    <style>
+        .scripts-container {
+            display: flex;
+            height: calc(100vh - 60px);
+            /* Adjust for header */
+        }
+
+        .sidebar {
+            width: 250px;
+            background-color: #f1f5f9;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .script-list {
+            flex: 1;
+            overflow-y: auto;
+            list-style: none;
+        }
+
+        .script-item {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.2s;
+        }
+
+        .script-item:hover {
+            background-color: #e2e8f0;
+        }
+
+        .script-item.active {
+            background-color: white;
+            border-left: 3px solid var(--primary-color);
+            font-weight: 500;
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .editor-header {
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f8fafc;
+        }
+
+        .code-editor {
+            flex: 1;
+            width: 100%;
+            border: none;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            background-color: #ffffff;
+            color: #1e293b;
+        }
+
+        .builds-panel {
+            width: 350px;
+            display: flex;
+            flex-direction: column;
+            background-color: #f8fafc;
+        }
+
+        .term-output {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            flex: 1;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .build-item {
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .build-item:hover {
+            background-color: #e2e8f0;
+        }
+
+        .build-item.selected {
+            background-color: #cbd5e1;
+        }
+
+        .status-dot {
+            height: 8px;
+            width: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .status-success {
+            background-color: #22c55e;
+        }
+
+        .status-fail {
+            background-color: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-header">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <h1>Script Manager</h1>
+            <a href="/" class="btn secondary small">Back to Extraction</a>
+        </div>
+        <div class="header-actions">
+            <!-- Global actions if any -->
+        </div>
+    </div>
+
+    <div class="scripts-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <span>Scripts</span>
+                <button id="newScriptBtn" class="btn small primary">+ New</button>
+            </div>
+            <ul class="script-list" id="scriptList">
+                <!-- Scripts loaded here -->
+            </ul>
+        </div>
+
+        <!-- Editor -->
+        <div class="editor-container">
+            <div class="editor-header">
+                <span id="currentScriptName">Select a script</span>
+                <div class="editor-actions">
+                    <button id="saveScriptBtn" class="btn secondary small" disabled>Save</button>
+                    <button id="runScriptBtn" class="btn primary small" disabled>Run</button>
+                </div>
+            </div>
+            <textarea id="codeEditor" class="code-editor" spellcheck="false"
+                placeholder="Select or create a script to start coding..."></textarea>
+        </div>
+
+        <!-- Builds Panel -->
+        <div class="builds-panel">
+            <div class="pane-header">Build History</div>
+            <div id="buildList" style="height: 200px; overflow-y: auto; border-bottom: 1px solid var(--border-color);">
+                <div class="empty-state" style="padding: 1rem; font-size: 0.8rem;">No builds yet</div>
+            </div>
+            <div class="pane-header">Console Output</div>
+            <div id="consoleOutput" class="term-output">Select a build to view output...</div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/scripts_dashboard.js') }}"></script>
+</body>
+
+</html>
