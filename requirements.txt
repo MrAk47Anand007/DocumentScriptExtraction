@@ -2,3 +2,6 @@ flask
 pdfplumber
 pandas
 werkzeug
+flask-sqlalchemy>=3.1
+alembic>=1.13
+apscheduler>=3.10
