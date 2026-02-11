@@ -42,6 +42,10 @@ def create_app(config_object=None):
     from services.scheduler_service import init_scheduler
     init_scheduler(app)
 
+    # Enable CORS
+    from flask_cors import CORS
+    CORS(app)
+
     return app
 
 
