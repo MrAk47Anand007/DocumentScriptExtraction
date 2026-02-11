@@ -128,6 +128,16 @@ export const deleteSchedule = createAsyncThunk('scripts/deleteSchedule', async (
     return null
 })
 
+export const forceSyncGist = createAsyncThunk('scripts/forceSyncGist', async (scriptId: string) => {
+    const response = await axios.post(`/api/scripts/${scriptId}/gist/sync`)
+    return { scriptId, ...response.data }
+})
+
+export const deleteGist = createAsyncThunk('scripts/deleteGist', async (scriptId: string) => {
+    await axios.delete(`/api/scripts/${scriptId}/gist`)
+    return scriptId
+})
+
 // --- Collection Thunks ---
 
 export const fetchCollections = createAsyncThunk('scripts/fetchCollections', async () => {
@@ -188,8 +198,17 @@ const scriptsSlice = createSlice({
             .addCase(saveScript.pending, (state) => {
                 state.saveStatus = 'saving'
             })
-            .addCase(saveScript.fulfilled, (state) => {
+            .addCase(saveScript.fulfilled, (state, action) => {
                 state.saveStatus = 'saved'
+                // Update the script item in the list with the returned data (gist_url, gist_id, sync_to_gist, etc.)
+                const idx = state.items.findIndex(s => s.id === action.payload.id)
+                if (idx !== -1) {
+                    state.items[idx] = { ...state.items[idx], ...action.payload }
+                } else {
+                    // New script — add it to the list
+                    state.items.push(action.payload)
+                    state.activeScriptId = action.payload.id
+                }
             })
             .addCase(saveScript.rejected, (state) => {
                 state.saveStatus = 'failed'
@@ -244,6 +263,22 @@ const scriptsSlice = createSlice({
                 const script = state.items.find(s => s.id === action.payload.scriptId)
                 if (script) {
                     script.collection_id = action.payload.collectionId
+                }
+            })
+            .addCase(forceSyncGist.fulfilled, (state, action) => {
+                const script = state.items.find(s => s.id === action.payload.scriptId)
+                if (script) {
+                    script.gist_id = action.payload.gist_id
+                    script.gist_url = action.payload.gist_url
+                    script.sync_to_gist = true
+                }
+            })
+            .addCase(deleteGist.fulfilled, (state, action) => {
+                const script = state.items.find(s => s.id === action.payload)
+                if (script) {
+                    script.gist_id = undefined
+                    script.gist_url = undefined
+                    script.sync_to_gist = false
                 }
             })
     }
