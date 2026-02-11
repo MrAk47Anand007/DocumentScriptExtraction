@@ -1,9 +1,11 @@
 import os
 import secrets
 from datetime import datetime
+import requests
 from flask import Blueprint, request, jsonify, render_template, current_app, Response, stream_with_context
 from extensions import db
 from models.script import Script, Build
+from models.setting import Setting
 from services.script_runner import execute_script_async, get_output_queue
 
 scripts_bp = Blueprint('scripts', __name__)
@@ -33,13 +35,89 @@ def handle_scripts():
         with open(filepath, 'w') as f:
             f.write(content)
 
-        script = Script.query.filter_by(filename=script_name).first()
         if not script:
             script = Script(name=script_name, filename=script_name)
             db.session.add(script)
-        db.session.commit()
+        
+        # Update fields
+        if 'sync_to_gist' in data:
+            script.sync_to_gist = data['sync_to_gist']
 
-        return jsonify({'message': 'Script saved', 'id': script.id, 'name': script.name})
+        db.session.commit()
+        
+        # Sync to Gist if enabled
+        if script.sync_to_gist:
+            try:
+                sync_script_to_gist(script, content)
+                db.session.commit() # Commit gist_id/url updates
+            except Exception as e:
+                print(f"Failed to sync to Gist: {e}")
+                # Don't fail the request, just log it (or return warning)
+
+        return jsonify({'message': 'Script saved', 'id': script.id, 'name': script.name, 'gist_url': script.gist_url})
+
+
+def sync_script_to_gist(script, content):
+    token_setting = Setting.query.get('github_token')
+    if not token_setting or not token_setting.value:
+        print("No GitHub token found in settings")
+        return
+
+    token = token_setting.value
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+
+    # Determine filename
+    gist_filename = script.name
+    if script.collection:
+        # Sanitize collection name for filename
+        col_name = "".join(c for c in script.collection.name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        gist_filename = f"{col_name}_{script.name}"
+    
+    # Ensure extension
+    if not gist_filename.endswith('.py'):
+        gist_filename += '.py'
+
+    files = {
+        gist_filename: {
+            "content": content
+        }
+    }
+
+    if script.gist_id:
+        # Update existing Gist
+        # Note: If the filename changed (e.g. moved collection), Gist API handles renaming if we pass the new filename with content
+        # BUT we need to know the OLD filename to rename it properly in Gist (old_name: null, new_name: content).
+        # For simplicity, we'll just update/create a file with the current calculated name. 
+        # Ideally we'd track the old name or just use a fixed ID. 
+        # Creating a single multi-file Gist for the whole app? No, user said "save each script on GitHub gist".
+        # So multiple Gists.
+        
+        # Issue: If we just push 'new_name': content, it adds a new file to the Gist if it didn't exist.
+        # It doesn't delete the old one unless we pass 'old_name': null.
+        # Since we don't track the old name easily here, we might accumulate files if renamed.
+        # For MVP, we just push the content to the current name.
+        
+        url = f"https://api.github.com/gists/{script.gist_id}"
+        resp = requests.patch(url, json={"files": files}, headers=headers)
+    else:
+        # Create new Gist
+        payload = {
+            "description": f"Script: {script.name} (Document Extraction Portal)",
+            "public": False, # Default to private
+            "files": files
+        }
+        url = "https://api.github.com/gists"
+        resp = requests.post(url, json=payload, headers=headers)
+
+    if resp.status_code in (200, 201):
+        data = resp.json()
+        script.gist_id = data['id']
+        script.gist_url = data['html_url']
+    else:
+        raise Exception(f"Gist API Error {resp.status_code}: {resp.text}")
 
 
 @scripts_bp.route('/api/scripts/<script_id>')
@@ -172,3 +250,59 @@ def get_build_output(script_id, build_id):
         return jsonify({'output': content})
 
     return jsonify({'output': ''})
+
+
+# --- Collection Endpoints ---
+
+from models.collection import Collection
+
+@scripts_bp.route('/api/collections', methods=['GET', 'POST'])
+def handle_collections():
+    if request.method == 'GET':
+        collections = Collection.query.order_by(Collection.created_at).all()
+        return jsonify([c.to_dict() for c in collections])
+
+    elif request.method == 'POST':
+        data = request.json
+        name = data.get('name', '').strip()
+        if not name:
+            return jsonify({'error': 'Name required'}), 400
+        
+        collection = Collection(name=name)
+        db.session.add(collection)
+        db.session.commit()
+        return jsonify(collection.to_dict())
+
+
+@scripts_bp.route('/api/collections/<collection_id>', methods=['DELETE'])
+def delete_collection(collection_id):
+    collection = Collection.query.get(collection_id)
+    if not collection:
+        return jsonify({'error': 'Collection not found'}), 404
+    
+    # Scripts will automatically have collection_id set to NULL due to relationship? 
+    # Actually we didn't set cascade in Collection.scripts. 
+    # SQLAlchemy default is to set FK to NULL if nullable=True.
+    
+    db.session.delete(collection)
+    db.session.commit()
+    return jsonify({'message': 'Deleted'})
+
+
+@scripts_bp.route('/api/scripts/<script_id>/move', methods=['PUT'])
+def move_script(script_id):
+    script = Script.query.get(script_id)
+    if not script:
+        return jsonify({'error': 'Script not found'}), 404
+    
+    data = request.json
+    collection_id = data.get('collection_id') # Can be None to move to Unsorted
+    
+    if collection_id:
+        collection = Collection.query.get(collection_id)
+        if not collection:
+            return jsonify({'error': 'Collection not found'}), 404
+            
+    script.collection_id = collection_id
+    db.session.commit()
+    return jsonify({'message': 'Script moved', 'collection_id': collection_id})

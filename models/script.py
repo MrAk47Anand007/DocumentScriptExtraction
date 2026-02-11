@@ -17,6 +17,14 @@ class Script(db.Model):
                               default=lambda: secrets.token_urlsafe(32))
     schedule_cron = db.Column(db.String(100), nullable=True)
     schedule_enabled = db.Column(db.Boolean, default=False)
+    
+    # GitHub Gist Integration
+    gist_id = db.Column(db.String(100), nullable=True)
+    gist_url = db.Column(db.String(255), nullable=True)
+    sync_to_gist = db.Column(db.Boolean, default=False)
+    
+    # Foreign Key to Collection
+    collection_id = db.Column(db.String(36), db.ForeignKey('collections.id'), nullable=True)
 
     builds = db.relationship('Build', backref='script', lazy=True,
                              cascade='all, delete-orphan')
@@ -30,7 +38,11 @@ class Script(db.Model):
             'webhook_token': self.webhook_token,
             'schedule_cron': self.schedule_cron,
             'schedule_enabled': self.schedule_enabled,
+            'collection_id': self.collection_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'gist_id': self.gist_id,
+            'gist_url': self.gist_url,
+            'sync_to_gist': self.sync_to_gist
         }
 
 

@@ -13,6 +13,11 @@ export interface Script {
     webhook_token?: string
     schedule_cron?: string
     schedule_enabled?: boolean
+    collection_id?: string | null
+    // GitHub Gist
+    gist_id?: string
+    gist_url?: string
+    sync_to_gist?: boolean
 }
 
 export interface Build {
@@ -24,8 +29,17 @@ export interface Build {
     triggered_by: string
 }
 
+export interface Collection {
+    id: string;
+    name: string;
+    description?: string;
+    script_count?: number;
+    created_at: string;
+}
+
 interface ScriptsState {
     items: Script[];
+    collections: Collection[];
     activeScriptId: string | null;
     activeScriptContent: string;
     builds: Build[];
@@ -43,6 +57,7 @@ interface ScriptsState {
 
 const initialState: ScriptsState = {
     items: [],
+    collections: [],
     activeScriptId: null,
     activeScriptContent: '',
     builds: [],
@@ -111,6 +126,28 @@ export const saveSchedule = createAsyncThunk('scripts/saveSchedule', async (data
 export const deleteSchedule = createAsyncThunk('scripts/deleteSchedule', async (scriptId: string) => {
     await axios.delete(`/api/scripts/${scriptId}/schedule`)
     return null
+})
+
+// --- Collection Thunks ---
+
+export const fetchCollections = createAsyncThunk('scripts/fetchCollections', async () => {
+    const response = await axios.get('/api/collections')
+    return response.data
+})
+
+export const createCollection = createAsyncThunk('scripts/createCollection', async (name: string) => {
+    const response = await axios.post('/api/collections', { name })
+    return response.data
+})
+
+export const deleteCollection = createAsyncThunk('scripts/deleteCollection', async (id: string) => {
+    await axios.delete(`/api/collections/${id}`)
+    return id
+})
+
+export const moveScript = createAsyncThunk('scripts/moveScript', async ({ scriptId, collectionId }: { scriptId: string, collectionId: string | null }) => {
+    const response = await axios.put(`/api/scripts/${scriptId}/move`, { collection_id: collectionId })
+    return { scriptId, collectionId: response.data.collection_id }
 })
 
 const scriptsSlice = createSlice({
@@ -186,6 +223,28 @@ const scriptsSlice = createSlice({
                 state.schedule.enabled = false
                 state.schedule.nextRun = null
                 state.schedule.status = 'idle'
+            })
+            // --- Collection Reducers ---
+            .addCase(fetchCollections.fulfilled, (state, action) => {
+                state.collections = action.payload
+            })
+            .addCase(createCollection.fulfilled, (state, action) => {
+                state.collections.push(action.payload)
+            })
+            .addCase(deleteCollection.fulfilled, (state, action) => {
+                state.collections = state.collections.filter(c => c.id !== action.payload)
+                // Update scripts in this collection to be unsorted (null)
+                state.items.forEach(script => {
+                    if (script.collection_id === action.payload) {
+                        script.collection_id = null
+                    }
+                })
+            })
+            .addCase(moveScript.fulfilled, (state, action) => {
+                const script = state.items.find(s => s.id === action.payload.scriptId)
+                if (script) {
+                    script.collection_id = action.payload.collectionId
+                }
             })
     }
 })

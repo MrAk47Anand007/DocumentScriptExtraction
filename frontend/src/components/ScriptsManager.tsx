@@ -1,15 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
-import { fetchScripts, createScript, setActiveScript, fetchScriptContent, saveScript, runScript, fetchBuilds, fetchBuildOutput, updateActiveScriptContent, appendBuildOutput, clearBuildOutput, regenerateWebhook, fetchSchedule, saveSchedule } from '../features/scripts/scriptsSlice';
+import { fetchScriptContent, saveScript, runScript, fetchBuilds, fetchBuildOutput, updateActiveScriptContent, appendBuildOutput, clearBuildOutput, regenerateWebhook, fetchSchedule, saveSchedule, fetchCollections, moveScript, fetchScripts } from '../features/scripts/scriptsSlice';
+import { fetchSettings } from '../features/settings/settingsSlice';
+import type { Script, Collection } from '../features/scripts/scriptsSlice';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { FileCode, Plus, Play, Save, Terminal, Clock, Link as LinkIcon, Calendar, RefreshCw } from 'lucide-react';
+import { Play, Save, Terminal, Clock, Link as LinkIcon, Calendar, RefreshCw, Folder, Github, ExternalLink } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { ScriptsSidebar } from './ScriptsSidebar';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
 export const ScriptsManager = () => {
     const dispatch = useAppDispatch();
-    const { items: scripts, activeScriptId, activeScriptContent, builds, currentBuildOutput, saveStatus, schedule } = useAppSelector((state) => state.scripts);
+    const { items: scripts, collections, activeScriptId, activeScriptContent, builds, currentBuildOutput, saveStatus, schedule } = useAppSelector((state) => state.scripts);
+    const { settings } = useAppSelector((state) => state.settings);
     const consoleRef = useRef<HTMLDivElement>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
     const [cronExpression, setCronExpression] = useState('');
@@ -17,6 +29,8 @@ export const ScriptsManager = () => {
 
     useEffect(() => {
         dispatch(fetchScripts());
+        dispatch(fetchCollections());
+        dispatch(fetchSettings());
     }, [dispatch]);
 
     useEffect(() => {
@@ -47,21 +61,43 @@ export const ScriptsManager = () => {
         }
     }, [currentBuildOutput]);
 
-    const handleCreate = async () => {
-        const name = prompt("Enter script name (e.g., myscript.py)");
-        if (name) {
-            await dispatch(createScript(name));
-        }
-    };
-
     const handleSave = async () => {
         if (activeScriptId) {
             const script = scripts.find(s => s.id === activeScriptId);
             if (script) {
-                await dispatch(saveScript({ id: activeScriptId, name: script.name, content: activeScriptContent }));
+                await dispatch(saveScript({
+                    id: activeScriptId,
+                    name: script.name,
+                    content: activeScriptContent,
+                    // @ts-ignore
+                    sync_to_gist: script.sync_to_gist
+                }));
             }
         }
     };
+
+    const toggleGistSync = async (enabled: boolean) => {
+        if (enabled && !settings['github_token']) {
+            alert("Please configure your GitHub Token in Settings first.");
+            return;
+        }
+
+        if (activeScriptId) {
+            const script = scripts.find(s => s.id === activeScriptId);
+            if (script) {
+                await dispatch(saveScript({
+                    id: activeScriptId,
+                    name: script.name,
+                    content: activeScriptContent,
+                    // @ts-ignore
+                    sync_to_gist: enabled
+                }));
+                // Functionally we should update local state optimistically or wait for fetchScripts
+                // saveScript returns updated script so it should update store
+                dispatch(fetchScripts());
+            }
+        }
+    }
 
     const handleScheduleSave = async () => {
         if (activeScriptId) {
@@ -117,47 +153,71 @@ export const ScriptsManager = () => {
         await dispatch(fetchBuildOutput({ scriptId: activeScriptId, buildId }));
     };
 
+    const handleMoveScript = async (collectionId: string) => {
+        if (activeScriptId) {
+            await dispatch(moveScript({
+                scriptId: activeScriptId,
+                collectionId: collectionId === 'unsorted' ? null : collectionId
+            }));
+            // Refresh scripts to update the sidebar
+            dispatch(fetchScripts());
+        }
+    }
+
     const activeScript = scripts.find(s => s.id === activeScriptId);
     const webhookUrl = activeScript?.webhook_token ? `${window.location.origin}/api/scripts/webhook/${activeScript.webhook_token}` : 'No webhook generated';
 
     return (
         <div className="flex h-screen bg-white">
             {/* Sidebar List */}
-            <div className="w-64 border-r flex flex-col bg-slate-50">
-                <div className="p-4 border-b flex items-center justify-between">
-                    <h2 className="font-semibold text-xs tracking-wider text-slate-500 uppercase">SCRIPTS</h2>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCreate}>
-                        <Plus className="h-4 w-4 text-slate-600" />
-                    </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                    {scripts.map((script) => (
-                        <div
-                            key={script.id}
-                            onClick={() => dispatch(setActiveScript(script.id))}
-                            className={cn(
-                                "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors",
-                                activeScriptId === script.id
-                                    ? "bg-white text-blue-600 shadow-sm border border-slate-200"
-                                    : "text-slate-600 hover:bg-slate-200/50"
-                            )}
-                        >
-                            <FileCode className="h-4 w-4" />
-                            <span className="truncate">{script.name}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
+            <ScriptsSidebar />
 
             {/* Main Editor Area */}
             <div className="flex-1 flex flex-col min-w-0">
                 {activeScriptId ? (
                     <>
                         <div className="border-b px-4 py-2 flex items-center justify-between bg-white">
-                            <span className="font-semibold text-sm text-slate-700">
-                                {scripts.find(s => s.id === activeScriptId)?.name}
-                            </span>
-                            <div className="flex gap-2">
+                            <div className="flex items-center gap-4">
+                                <span className="font-semibold text-sm text-slate-700">
+                                    {scripts.find(s => s.id === activeScriptId)?.name}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <Folder className="h-3.5 w-3.5 text-slate-400" />
+                                    <Select
+                                        value={activeScript?.collection_id || 'unsorted'}
+                                        onValueChange={handleMoveScript}
+                                    >
+                                        <SelectTrigger className="h-6 w-[140px] text-xs border-slate-200">
+                                            <SelectValue placeholder="Collection" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="unsorted">Unsorted</SelectItem>
+                                            {collections.map(c => (
+                                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 items-center">
+                                {/* Gist Info */}
+                                {activeScript?.gist_url && (
+                                    <a href={activeScript.gist_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline mr-2" title="View on GitHub Gist">
+                                        <Github className="h-3.5 w-3.5" />
+                                    </a>
+                                )}
+
+                                {/* Sync Toggle */}
+                                <div className="flex items-center gap-1.5 mr-2" title="Sync to GitHub Gist">
+                                    <Switch
+                                        id="gist-sync-toggle"
+                                        checked={activeScript?.sync_to_gist || false}
+                                        onCheckedChange={toggleGistSync}
+                                        className="h-4 w-7"
+                                    />
+                                    <Label htmlFor="gist-sync-toggle" className="text-[10px] text-slate-500 cursor-pointer">Gist</Label>
+                                </div>
+
                                 <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleSave} disabled={saveStatus === 'saving'}>
                                     <Save className="h-3 w-3" />
                                     {saveStatus === 'saving' ? 'Saving...' : 'Save'}

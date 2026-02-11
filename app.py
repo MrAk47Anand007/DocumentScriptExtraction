@@ -26,13 +26,15 @@ def create_app(config_object=None):
     from blueprints.extraction import extraction_bp
     from blueprints.scripts import scripts_bp
     from blueprints.webhooks import webhooks_bp
-    from blueprints.scheduler_bp import scheduler_bp
     from blueprints.public_api import public_api_bp
+    from blueprints.settings import settings_bp
+    from blueprints.scheduler import scheduler_bp
     app.register_blueprint(extraction_bp)
     app.register_blueprint(scripts_bp)
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(scheduler_bp)
     app.register_blueprint(public_api_bp)
+    app.register_blueprint(settings_bp)
 
     with app.app_context():
         db.create_all()
