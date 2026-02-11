@@ -31,13 +31,20 @@
             </div>
 
             <div class="split-pane" id="extractionPane">
-                <div class="pane-header">
+                <div class="pane-header" style="justify-content: space-between;">
                     <span>Extraction Results</span>
-                    <button id="extractBtn" class="btn primary" disabled>Extract Data</button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <select id="templateSelect" class="form-select"
+                            style="padding: 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.9rem;">
+                            <option value="">Select Template...</option>
+                        </select>
+                        <button id="extractBtn" class="btn primary" disabled>Extract</button>
+                        <button id="exportBtn" class="btn secondary" disabled>Export JSON</button>
+                    </div>
                 </div>
                 <div id="resultsContainer">
                     <div class="empty-state">
-                        <p>No data extracted yet. Upload a PDF and click Extract.</p>
+                        <p>Upload a PDF, select a template, and click Extract.</p>
                     </div>
                     <div id="extractedData" class="data-grid" style="display: none;"></div>
                 </div>
@@ -54,27 +61,70 @@
 
     <!-- Rules Modal -->
     <div id="rulesModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content"
+            style="width: 90%; max-width: 1200px; height: 85vh; display: flex; flex-direction: column;">
             <div class="modal-header">
-                <h2>Manage Extraction Rules</h2>
+                <h2>Manage Extraction Templates</h2>
                 <span class="close-modal">&times;</span>
             </div>
-            <div class="modal-body">
-                <div class="rules-actions">
-                    <button id="addRuleBtn" class="btn small">Add New Rule</button>
+
+            <div class="modal-body"
+                style="display: flex; flex: 1; padding: 0; overflow: hidden; background-color: #f8fafc;">
+                <!-- Sidebar: Template List -->
+                <div
+                    style="width: 300px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; background: #fff;">
+                    <div
+                        style="padding: 1rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="font-size: 0.9rem; font-weight: 600; color: #475569; margin: 0;">TEMPLATES</h3>
+                        <button id="createTemplateBtn" class="btn small primary">+ New</button>
+                    </div>
+                    <div id="templatesList" style="flex: 1; overflow-y: auto;">
+                        <!-- Templates injected here -->
+                    </div>
                 </div>
-                <table id="rulesTable">
-                    <thead>
-                        <tr>
-                            <th>Field Name</th>
-                            <th>Regex Pattern</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- Rules will be populated here -->
-                    </tbody>
-                </table>
+
+                <!-- Main: Rules Editor -->
+                <div style="flex: 1; display: flex; flex-direction: column; padding: 0; background: #fff;">
+                    <!-- Template Header -->
+                    <div id="templateHeader"
+                        style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background-color: #fff;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <h3 id="currentTemplateTitle" style="margin: 0; font-size: 1.1rem;">Select a Template</h3>
+                            <button id="editTemplateBtn" class="btn small secondary" style="display: none;">Edit
+                                Name</button>
+                        </div>
+                        <div id="templateActions" style="display: none; gap: 8px;">
+                            <button id="deleteTemplateBtn" class="btn small danger">Delete Template</button>
+                        </div>
+                    </div>
+
+                    <!-- Rules Area -->
+                    <div id="rulesArea" style="flex: 1; padding: 1.5rem; overflow-y: auto; display: none;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h4 style="margin: 0; color: #475569;">Extraction Rules</h4>
+                            <button id="addRuleBtn" class="btn small primary">+ Add Rule</button>
+                        </div>
+
+                        <table id="rulesTable" style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background-color: #f1f5f9; text-align: left;">
+                                    <th style="padding: 8px; border: 1px solid #e2e8f0;">Field Name</th>
+                                    <th style="padding: 8px; border: 1px solid #e2e8f0;">Regex Pattern</th>
+                                    <th style="padding: 8px; border: 1px solid #e2e8f0; width: 140px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rulesTableBody">
+                                <!-- Rules injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div id="emptySelectionState"
+                        style="flex: 1; display: flex; align-items: center; justify-content: center; color: #94a3b8;">
+                        <p>Select a template from the sidebar to manage its rules.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
