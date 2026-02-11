@@ -26,6 +26,7 @@ def handle_scripts():
         data = request.json
         script_name = data.get('name', '').strip()
         content = data.get('content', '')
+        script_id = data.get('id')
 
         if not script_name.endswith('.py'):
             script_name += '.py'
@@ -35,33 +36,57 @@ def handle_scripts():
         with open(filepath, 'w') as f:
             f.write(content)
 
+        # Look up existing script by id (preferred) or name
+        if script_id:
+            script = Script.query.get(script_id)
+        else:
+            script = Script.query.filter_by(name=script_name).first()
+
         if not script:
             script = Script(name=script_name, filename=script_name)
             db.session.add(script)
-        
+        else:
+            # Update filename in case name was changed
+            script.filename = script_name
+
         # Update fields
         if 'sync_to_gist' in data:
             script.sync_to_gist = data['sync_to_gist']
 
         db.session.commit()
-        
+
         # Sync to Gist if enabled
+        gist_error = None
         if script.sync_to_gist:
             try:
                 sync_script_to_gist(script, content)
-                db.session.commit() # Commit gist_id/url updates
+                db.session.commit()  # Commit gist_id/url/filename updates
             except Exception as e:
+                gist_error = str(e)
                 print(f"Failed to sync to Gist: {e}")
-                # Don't fail the request, just log it (or return warning)
 
-        return jsonify({'message': 'Script saved', 'id': script.id, 'name': script.name, 'gist_url': script.gist_url})
+        response = script.to_dict()
+        response['message'] = 'Script saved'
+        if gist_error:
+            response['gist_error'] = gist_error
+        return jsonify(response)
+
+
+def _calculate_gist_filename(script):
+    """Calculate the gist filename based on script name and collection."""
+    gist_filename = script.name
+    if script.collection:
+        col_name = "".join(c for c in script.collection.name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        gist_filename = f"{col_name}_{script.name}"
+    if not gist_filename.endswith('.py'):
+        gist_filename += '.py'
+    return gist_filename
 
 
 def sync_script_to_gist(script, content):
     token_setting = Setting.query.get('github_token')
     if not token_setting or not token_setting.value:
-        print("No GitHub token found in settings")
-        return
+        raise Exception("No GitHub token configured. Please set your GitHub token in Settings.")
 
     token = token_setting.value
     headers = {
@@ -69,45 +94,31 @@ def sync_script_to_gist(script, content):
         'Accept': 'application/vnd.github.v3+json'
     }
 
-    # Determine filename
-    gist_filename = script.name
-    if script.collection:
-        # Sanitize collection name for filename
-        col_name = "".join(c for c in script.collection.name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        gist_filename = f"{col_name}_{script.name}"
-    
-    # Ensure extension
-    if not gist_filename.endswith('.py'):
-        gist_filename += '.py'
-
-    files = {
-        gist_filename: {
-            "content": content
-        }
-    }
+    new_filename = _calculate_gist_filename(script)
+    old_filename = script.gist_filename  # Previously tracked filename
 
     if script.gist_id:
-        # Update existing Gist
-        # Note: If the filename changed (e.g. moved collection), Gist API handles renaming if we pass the new filename with content
-        # BUT we need to know the OLD filename to rename it properly in Gist (old_name: null, new_name: content).
-        # For simplicity, we'll just update/create a file with the current calculated name. 
-        # Ideally we'd track the old name or just use a fixed ID. 
-        # Creating a single multi-file Gist for the whole app? No, user said "save each script on GitHub gist".
-        # So multiple Gists.
-        
-        # Issue: If we just push 'new_name': content, it adds a new file to the Gist if it didn't exist.
-        # It doesn't delete the old one unless we pass 'old_name': null.
-        # Since we don't track the old name easily here, we might accumulate files if renamed.
-        # For MVP, we just push the content to the current name.
-        
+        # Build files payload for PATCH
+        files = {new_filename: {"content": content}}
+
+        # If the filename changed, delete the old file from the gist
+        if old_filename and old_filename != new_filename:
+            files[old_filename] = None  # null = delete file from gist
+
+        collection_label = f" [{script.collection.name}]" if script.collection else ""
+        payload = {
+            "description": f"Script: {script.name}{collection_label} (Document Extraction Portal)",
+            "files": files
+        }
         url = f"https://api.github.com/gists/{script.gist_id}"
-        resp = requests.patch(url, json={"files": files}, headers=headers)
+        resp = requests.patch(url, json=payload, headers=headers)
     else:
         # Create new Gist
+        collection_label = f" [{script.collection.name}]" if script.collection else ""
         payload = {
-            "description": f"Script: {script.name} (Document Extraction Portal)",
-            "public": False, # Default to private
-            "files": files
+            "description": f"Script: {script.name}{collection_label} (Document Extraction Portal)",
+            "public": False,
+            "files": {new_filename: {"content": content}}
         }
         url = "https://api.github.com/gists"
         resp = requests.post(url, json=payload, headers=headers)
@@ -116,8 +127,35 @@ def sync_script_to_gist(script, content):
         data = resp.json()
         script.gist_id = data['id']
         script.gist_url = data['html_url']
+        script.gist_filename = new_filename
     else:
         raise Exception(f"Gist API Error {resp.status_code}: {resp.text}")
+
+
+def delete_script_gist(script):
+    """Delete the gist from GitHub and clear gist fields on the script."""
+    token_setting = Setting.query.get('github_token')
+    if not token_setting or not token_setting.value:
+        raise Exception("No GitHub token configured.")
+
+    if not script.gist_id:
+        return  # Nothing to delete
+
+    token = token_setting.value
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+
+    url = f"https://api.github.com/gists/{script.gist_id}"
+    resp = requests.delete(url, headers=headers)
+
+    if resp.status_code not in (204, 404):
+        raise Exception(f"Gist Delete Error {resp.status_code}: {resp.text}")
+
+    script.gist_id = None
+    script.gist_url = None
+    script.gist_filename = None
 
 
 @scripts_bp.route('/api/scripts/<script_id>')
@@ -294,15 +332,56 @@ def move_script(script_id):
     script = Script.query.get(script_id)
     if not script:
         return jsonify({'error': 'Script not found'}), 404
-    
+
     data = request.json
     collection_id = data.get('collection_id') # Can be None to move to Unsorted
-    
+
     if collection_id:
         collection = Collection.query.get(collection_id)
         if not collection:
             return jsonify({'error': 'Collection not found'}), 404
-            
+
     script.collection_id = collection_id
     db.session.commit()
     return jsonify({'message': 'Script moved', 'collection_id': collection_id})
+
+
+# --- GitHub Gist Endpoints ---
+
+@scripts_bp.route('/api/scripts/<script_id>/gist/sync', methods=['POST'])
+def force_gist_sync(script_id):
+    """Force-sync a script to GitHub Gist (create or update)."""
+    script = Script.query.get(script_id)
+    if not script:
+        return jsonify({'error': 'Script not found'}), 404
+
+    script_path = os.path.join(current_app.config['SCRIPTS_FOLDER'], script.filename)
+    if not os.path.exists(script_path):
+        return jsonify({'error': 'Script file not found on disk'}), 404
+
+    with open(script_path, 'r') as f:
+        content = f.read()
+
+    try:
+        sync_script_to_gist(script, content)
+        script.sync_to_gist = True
+        db.session.commit()
+        return jsonify({'message': 'Gist synced', 'gist_id': script.gist_id, 'gist_url': script.gist_url})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@scripts_bp.route('/api/scripts/<script_id>/gist', methods=['DELETE'])
+def remove_gist(script_id):
+    """Delete the GitHub Gist for a script and unlink it."""
+    script = Script.query.get(script_id)
+    if not script:
+        return jsonify({'error': 'Script not found'}), 404
+
+    try:
+        delete_script_gist(script)
+        script.sync_to_gist = False
+        db.session.commit()
+        return jsonify({'message': 'Gist deleted and unlinked'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
